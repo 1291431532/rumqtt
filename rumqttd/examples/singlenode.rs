@@ -5,6 +5,9 @@ use figment::{
 use rumqttd::{Broker, Config, Notification, Link};
 use std::thread;
 
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 fn main() {
     pretty_env_logger::init();
 
@@ -19,6 +22,7 @@ fn main() {
         broker.start().unwrap();
     });
 
+    // link_tx.subscribe("hello/+/world").unwrap();
     let mut count = 0;
     loop {
         let notification = match link_rx.recv().unwrap() {
@@ -43,7 +47,7 @@ fn main() {
     }
 }
 
-static CONFIG: &str = r#"
+static CONFIG: &'static str = r#"
         # Broker id. Used to identify local node of the replication mesh
         id = 0
 
@@ -61,19 +65,25 @@ static CONFIG: &str = r#"
 
         # Configuration of server and connections that it accepts
         [servers.1]
-        listen = "0.0.0.0:1883"
+        listen = "0.0.0.0:1884"
         next_connection_delay_ms = 1
             [servers.1.connections]
-            connection_timeout_ms = 30
+            connection_timeout_ms = 20
             max_client_id_len = 256
             throttle_delay_ms = 0
             max_payload_size = 5120
             max_inflight_count = 200
             max_inflight_size = 1024
 
+            [servers.1.tls_config]
+            cert_path = "broker/examples/localhost.cert.pem"
+            key_path = "broker/examples/localhost.key.pem"
+            ca_path = "broker/examples/ca.cert.pem"
+
         # Configuration of server and connections that it accepts
         [shadows.1]
-        listen = "0.0.0.0:5883"
+        listen = "0.0.0.0:5884"
+        end_user_auth = "https://demo.bytebeam.io/api/v1/auth-end-user"
         next_connection_delay_ms = 1
             [shadows.1.connections]
             connection_timeout_ms = 10000 # TODO original 100
@@ -84,19 +94,5 @@ static CONFIG: &str = r#"
             max_inflight_size = 1024
 
         [console]
-        listen = "0.0.0.0:3030"
-
-        [bridge]
-        url = "localhost"
-        port = 1884
-        qos = 1
-        reconnection_delay = 10
-        ping_delay = 10
-        timeout_delay = 10
-        sub_path = "hello/+/world"
-            [bridge.transport.tls]
-            ca = "broker/examples/ca.cert.pem"
-                [bridge.transport.tls.client_auth]
-                certs = 'broker/examples/bridge.cert.pem'
-                key = 'broker/examples/bridge.key.pem'
+        listen = "0.0.0.0:3031"
     "#;

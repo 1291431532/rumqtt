@@ -32,7 +32,7 @@ async fn requests(client: AsyncClient) {
 
     for i in 1..=10 {
         client
-            .publish("hello/world", QoS::ExactlyOnce, false, vec![1; i])
+            .publish("hello/world", QoS::AtLeastOnce, false, vec![1; i])
             .await
             .unwrap();
 
