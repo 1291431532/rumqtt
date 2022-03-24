@@ -40,8 +40,8 @@ pub enum Event {
     ReplicaData(Bytes),
     /// Disconnection request
     Disconnect(Disconnection),
-    /// Shadow
-    Shadow(ShadowRequest),
+    /// Websocket
+    Websocket(WebsocketRequest),
     /// Get metrics of a connection or all connections
     Metrics(MetricsRequest),
 }
@@ -75,8 +75,8 @@ pub enum Notification {
     },
     /// All metrics
     Metrics(MetricsReply),
-    /// Shadow
-    Shadow(ShadowReply),
+    /// Websocket
+    Websocket(WebsocketReply),
     Unschedule,
 }
 
@@ -178,12 +178,12 @@ pub struct Disconnection {
 }
 
 #[derive(Debug, Clone)]
-pub struct ShadowRequest {
+pub struct WebsocketRequest {
     pub filter: String,
 }
 
 #[derive(Debug, Clone)]
-pub struct ShadowReply {
+pub struct WebsocketReply {
     pub topic: String,
     pub payload: Bytes,
 }

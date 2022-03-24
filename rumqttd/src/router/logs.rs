@@ -197,7 +197,7 @@ impl DataLog {
         Ok((next, o))
     }
 
-    pub fn shadow(&mut self, filter: &str) -> Option<Bytes> {
+    pub fn websocket(&mut self, filter: &str) -> Option<Bytes> {
         let data = self.native.get_mut(*self.sub_map.get(filter)?)?;
         data.log.last()
     }

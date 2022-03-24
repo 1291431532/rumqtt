@@ -18,7 +18,7 @@ use super::logs::{AcksLog, DataLog};
 use super::tracker::Tracker;
 use super::{
     packetid, Ack, Connection, ConnectionAck, DataRequest, Event, FilterIdx, MetricsReply,
-    MetricsRequest, Notification, RouterMetrics, ShadowReply, ShadowRequest, MAX_CHANNEL_CAPACITY,
+    MetricsRequest, Notification, RouterMetrics, WebsocketReply, WebsocketRequest, MAX_CHANNEL_CAPACITY,
     MAX_SCHEDULE_ITERATIONS,
 };
 
@@ -268,7 +268,7 @@ impl Router {
             }
             Event::Disconnect(_request) => self.handle_disconnection(id),
             Event::Ready => self.connection_ready_reschedule(id),
-            Event::Shadow(request) => self.retrieve_shadow(id, request),
+            Event::Websocket(request) => self.retrieve_websocket(id, request),
             Event::Metrics(metrics) => self.retrieve_metrics(id, metrics),
         }
     }
@@ -874,17 +874,17 @@ impl Router {
         connection.metrics.try_send(message).ok();
     }
 
-    fn retrieve_shadow(&mut self, id: ConnectionId, shadow: ShadowRequest) {
-        if let Some(reply) = self.datalog.shadow(&shadow.filter) {
+    fn retrieve_websocket(&mut self, id: ConnectionId, websocket: WebsocketRequest) {
+        if let Some(reply) = self.datalog.websocket(&websocket.filter) {
             let publish: Result<Publish, v4::Error> = PublishBytes(reply).into();
             let publish = publish.unwrap();
             let (topic, payload) = publish.take_topic_and_payload().unwrap();
             let topic = std::str::from_utf8(&topic).unwrap().to_owned();
-            let shadow_reply = ShadowReply { topic, payload };
+            let websocket_reply = WebsocketReply { topic, payload };
             let outgoing = self.obufs.get_mut(id).unwrap();
 
-            // FIll notify shadow
-            let message = Notification::Shadow(shadow_reply);
+            // FIll notify websocket
+            let message = Notification::Websocket(websocket_reply);
             let len = outgoing.push_notification(message);
             let _should_unschedule = if len >= MAX_CHANNEL_CAPACITY - 1 {
                 outgoing.push_notification(Notification::Unschedule);

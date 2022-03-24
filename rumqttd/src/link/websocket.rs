@@ -45,11 +45,11 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("Reqwest Error = {0}")]
     Reqwest(#[from] reqwest::Error),
-    #[error("Shadow filter not set properly")]
+    #[error("Websocket filter not set properly")]
     InvalidFilter,
 }
 
-pub struct ShadowLink {
+pub struct WebsocketLink {
     pub(crate) client_id: String,
     pub(crate) connection_id: ConnectionId,
     network: Network,
@@ -58,12 +58,12 @@ pub struct ShadowLink {
     subscriptions: HashSet<Filter>,
 }
 
-impl ShadowLink {
+impl WebsocketLink {
     pub async fn new(
         config: Arc<ConnectionSettings>,
         router_tx: Sender<(ConnectionId, Event)>,
         stream: Box<dyn N>
-    ) -> Result<ShadowLink, Error> {
+    ) -> Result<WebsocketLink, Error> {
         // Connect to router
         let mut network = Network::new(stream).await?;
 
@@ -115,7 +115,7 @@ impl ShadowLink {
 
         // Send connection acknowledgement back to the client
         network.connack().await?;
-        Ok(ShadowLink {
+        Ok(WebsocketLink {
             client_id,
             connection_id: id,
             network,
@@ -140,14 +140,14 @@ impl ShadowLink {
                     match message {
                         Message::Text(m) => {
                             match serde_json::from_str(&m)? {
-                                Incoming::Shadow { filter } => {
-                                    match validate_shadow(&self.client_id, &filter) {
+                                Incoming::Websocket { filter } => {
+                                    match validate_websocket(&self.client_id, &filter) {
                                         Err(e) => {
                                             error!("{:15.15} {:20}: {}", self.connection_id, "validation error", e);
                                             self.network.write(close(&e)).await?;
                                             return Err(e)
                                         },
-                                        _ => self.link_tx.shadow(filter)?,
+                                        _ => self.link_tx.websocket(filter)?,
                                     }
                                 }
                                 Incoming::Ping { .. } => {
@@ -185,8 +185,8 @@ impl ShadowLink {
                     };
 
                     let message = match message {
-                        Notification::Shadow(shadow) => {
-                            let publish = Outgoing::Publish { topic: shadow.topic, data: serde_json::from_slice(&shadow.payload)? };
+                        Notification::Websocket(websocket) => {
+                            let publish = Outgoing::Publish { topic: websocket.topic, data: serde_json::from_slice(&websocket.payload)? };
                             Message::Text(serde_json::to_string(&publish)?)
                         },
                         v => unreachable!("Expecting only data or device acks. Received = {:?}", v)
@@ -198,7 +198,7 @@ impl ShadowLink {
                 }
                 _ = interval.tick() => {
                     for filter in self.subscriptions.iter() {
-                        self.link_tx.shadow(filter)?;
+                        self.link_tx.websocket(filter)?;
                     }
                 }
                 _ = ping.tick() => {
@@ -220,7 +220,7 @@ impl ShadowLink {
 
 /// Validates that the fields `device_id` are the same as that of device connected
 /// for a topic filter of format "/device/device_id/..."
-fn validate_shadow(client_id: &str, filter: &str) -> Result<(), Error> {
+fn validate_websocket(client_id: &str, filter: &str) -> Result<(), Error> {
     let tokens: Vec<&str> = filter.split('/').collect();
     let id = tokens.get(2).ok_or(Error::InvalidFilter)?.to_owned();
 
@@ -233,7 +233,7 @@ fn validate_shadow(client_id: &str, filter: &str) -> Result<(), Error> {
 fn close(e: &Error) -> Message {
     let msg = match e {
         Error::InvalidClientId => "Provided client id is not valid",
-        Error::InvalidFilter => "Shadow filter not set properly",
+        Error::InvalidFilter => "Websocket filter not set properly",
         _ => "ERROR",
     };
     Message::Close(Some(CloseFrame {
@@ -272,8 +272,8 @@ pub enum Outgoing {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type")]
 pub enum Incoming {
-    #[serde(alias = "shadow")]
-    Shadow { filter: String },
+    #[serde(alias = "websocket")]
+    Websocket { filter: String },
     #[serde(alias = "ping")]
     Ping { ping: bool },
     #[serde(alias = "publish")]

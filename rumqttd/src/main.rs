@@ -60,10 +60,10 @@ static CONFIG: &str = r#"
         max_connections = 10001
 
         # Configuration of server and connections that it accepts
-        [servers.1]
+        [tcp.1]
         listen = "0.0.0.0:1883"
         next_connection_delay_ms = 1
-            [servers.1.connections]
+            [tcp.1.connections]
             connection_timeout_ms = 30
             max_client_id_len = 256
             throttle_delay_ms = 0
@@ -72,10 +72,10 @@ static CONFIG: &str = r#"
             max_inflight_size = 1024
 
         # Configuration of server and connections that it accepts
-        [shadows.1]
+        [websocket.1]
         listen = "0.0.0.0:5883"
         next_connection_delay_ms = 1
-            [shadows.1.connections]
+            [websocket.1.connections]
             connection_timeout_ms = 10000 # TODO original 100
             max_client_id_len = 256
             throttle_delay_ms = 0

@@ -2,7 +2,7 @@ use crate::link::bridge;
 use crate::link::console::ConsoleLink;
 use crate::link::network::{Network, N};
 use crate::link::remote::{self, RemoteLink};
-use crate::link::websocket::{self, ShadowLink};
+use crate::link::websocket::{self, WebsocketLink};
 use crate::server::{create_nativetls_acceptor, create_rustls_acceptor, TLSAcceptor};
 use crate::ConnectionSettings;
 use flume::{RecvError, SendError, Sender};
@@ -143,7 +143,7 @@ impl Broker {
         }
 
         // spawn servers in a separate thread
-        for (id, config) in self.config.servers.clone() {
+        for (id, config) in self.config.tcp.clone() {
             let server_name = format!("mqtt-{}", id);
             let server_thread = thread::Builder::new().name(server_name.clone());
             let server = Server::new(server_name, config, self.router_tx.clone());
@@ -159,8 +159,8 @@ impl Broker {
             })?;
         }
 
-        for (id, config) in self.config.shadows.clone() {
-            let server_name = format!("shadow-{}", id);
+        for (id, config) in self.config.websocket.clone() {
+            let server_name = format!("websocket-{}", id);
             let server_thread = thread::Builder::new().name(server_name.clone());
             let server = Server::new(server_name, config, self.router_tx.clone());
             server_thread.spawn(move || {
@@ -241,7 +241,7 @@ impl Server {
         }
     }
 
-    async fn start(&self, shadow: bool) -> Result<(), Error> {
+    async fn start(&self, websocket: bool) -> Result<(), Error> {
         let listener = TcpListener::bind(&self.config.listen).await?;
         let delay = Duration::from_millis(self.config.next_connection_delay_ms);
         let mut count: usize = 0;
@@ -275,9 +275,9 @@ impl Server {
             let router_tx = self.router_tx.clone();
             count += 1;
 
-            match shadow {
+            match websocket {
                 false => task::spawn(device_connection(config, router_tx, network)),
-                true => task::spawn(shadow_connection(config, router_tx, network)),
+                true => task::spawn(websocket_connection(config, router_tx, network)),
             };
 
             time::sleep(delay).await;
@@ -332,13 +332,13 @@ async fn device_connection(
     router_tx.send(message).ok();
 }
 
-async fn shadow_connection(
+async fn websocket_connection(
     config: Arc<ConnectionSettings>,
     router_tx: Sender<(ConnectionId, Event)>,
     stream: Box<dyn N>,
 ) {
     // Start the link
-    let mut link = match ShadowLink::new(config, router_tx.clone(), stream).await {
+    let mut link = match WebsocketLink::new(config, router_tx.clone(), stream).await {
         Ok(l) => l,
         Err(e) => {
             error!("{:15.15}[E] Remote link error = {:?}", "", e);

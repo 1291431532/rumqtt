@@ -64,10 +64,10 @@ static CONFIG: &'static str = r#"
         max_connections = 10001
 
         # Configuration of server and connections that it accepts
-        [servers.1]
+        [tcp.1]
         listen = "0.0.0.0:1884"
         next_connection_delay_ms = 1
-            [servers.1.connections]
+            [tcp.1.connections]
             connection_timeout_ms = 20
             max_client_id_len = 256
             throttle_delay_ms = 0
@@ -75,17 +75,16 @@ static CONFIG: &'static str = r#"
             max_inflight_count = 200
             max_inflight_size = 1024
 
-            [servers.1.tls_config]
+            [tcp.1.tls_config]
             cert_path = "broker/examples/localhost.cert.pem"
             key_path = "broker/examples/localhost.key.pem"
             ca_path = "broker/examples/ca.cert.pem"
 
         # Configuration of server and connections that it accepts
-        [shadows.1]
+        [websocket.1]
         listen = "0.0.0.0:5884"
-        end_user_auth = "https://demo.bytebeam.io/api/v1/auth-end-user"
         next_connection_delay_ms = 1
-            [shadows.1.connections]
+            [websocket.1.connections]
             connection_timeout_ms = 10000 # TODO original 100
             max_client_id_len = 256
             throttle_delay_ms = 0

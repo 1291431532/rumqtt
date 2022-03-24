@@ -39,8 +39,8 @@ const MAX_REPLICA_ID: usize = MAX_NODES - 1;
 pub struct Config {
     pub id: usize,
     pub router: RouterConfig,
-    pub servers: HashMap<String, ServerSettings>,
-    pub shadows: HashMap<String, ServerSettings>,
+    pub tcp: HashMap<String, ServerSettings>,
+    pub websocket: HashMap<String, ServerSettings>,
     pub cluster: Option<ClusterSettings>,
     pub console: ConsoleSettings,
     pub bridge: Option<BridgeConfig>,

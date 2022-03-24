@@ -2,7 +2,7 @@ use crate::protocol::v4::subscribe::{self, SubscribeFilter};
 use crate::protocol::v4::{self, pingresp, puback, publish, suback, QoS};
 use crate::router::{
     iobufs::{Incoming, Outgoing},
-    Ack, Connection, ConnectionAck, Event, MetricsReply, Notification, ShadowRequest,
+    Ack, Connection, ConnectionAck, Event, MetricsReply, Notification, WebsocketRequest,
 };
 use crate::ConnectionId;
 use bytes::{Bytes, BytesMut};
@@ -193,9 +193,9 @@ impl LinkTx {
         Ok(len)
     }
 
-    /// Request to get device shadow
-    pub fn shadow<S: Into<String>>(&mut self, filter: S) -> Result<(), LinkError> {
-        let message = Event::Shadow(ShadowRequest {
+    /// Request to get Websocket
+    pub fn websocket<S: Into<String>>(&mut self, filter: S) -> Result<(), LinkError> {
+        let message = Event::Websocket(WebsocketRequest {
             filter: filter.into(),
         });
 
