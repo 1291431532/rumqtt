@@ -147,7 +147,7 @@ pub enum BridgeError {
     DNSName(#[from] InvalidDNSNameError),
     #[cfg(feature = "rustls")]
     #[error("TLS error - {0}")]
-    TLS(#[from] TLSError),
+    Tls(#[from] TLSError),
     #[error("No valid cert in chain")]
     NoValidCertInChain,
     #[error("local link - {0}")]
