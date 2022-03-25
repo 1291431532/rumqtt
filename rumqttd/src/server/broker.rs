@@ -2,6 +2,7 @@ use crate::link::bridge;
 use crate::link::console::ConsoleLink;
 use crate::link::network::{Network, N};
 use crate::link::remote::{self, RemoteLink};
+#[cfg(feature = "websocket")]
 use crate::link::websocket::{self, WebsocketLink};
 use crate::server::{create_nativetls_acceptor, create_rustls_acceptor, TLSAcceptor};
 use crate::ConnectionSettings;
@@ -277,7 +278,10 @@ impl Server {
 
             match websocket {
                 false => task::spawn(device_connection(config, router_tx, network)),
+                #[cfg(feature = "websocket")]
                 true => task::spawn(websocket_connection(config, router_tx, network)),
+                #[cfg(not(feature = "websocket"))]
+                _ => panic!("Websocket support is disabled; run with `--features=websocket`"),
             };
 
             time::sleep(delay).await;
@@ -332,6 +336,7 @@ async fn device_connection(
     router_tx.send(message).ok();
 }
 
+#[cfg(feature = "websocket")]
 async fn websocket_connection(
     config: Arc<ConnectionSettings>,
     router_tx: Sender<(ConnectionId, Event)>,

@@ -2,8 +2,10 @@ use crate::protocol::v4::subscribe::{self, SubscribeFilter};
 use crate::protocol::v4::{self, pingresp, puback, publish, suback, QoS};
 use crate::router::{
     iobufs::{Incoming, Outgoing},
-    Ack, Connection, ConnectionAck, Event, MetricsReply, Notification, WebsocketRequest,
+    Ack, Connection, ConnectionAck, Event, MetricsReply, Notification,
 };
+#[cfg(feature = "websocket")]
+use crate::router::WebsocketRequest;
 use crate::ConnectionId;
 use bytes::{Bytes, BytesMut};
 use flume::{Receiver, RecvError, RecvTimeoutError, SendError, Sender, TrySendError};
@@ -193,6 +195,7 @@ impl LinkTx {
         Ok(len)
     }
 
+    #[cfg(feature = "websocket")]
     /// Request to get Websocket
     pub fn websocket<S: Into<String>>(&mut self, filter: S) -> Result<(), LinkError> {
         let message = Event::Websocket(WebsocketRequest {
