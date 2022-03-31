@@ -5,24 +5,47 @@ use crate::{Incoming, MqttOptions, MqttState, Outgoing, Packet, Request, StateEr
 
 use crate::mqttbytes::v4::*;
 use async_channel::{bounded, Receiver, Sender};
-#[cfg(feature = "websocket")]
+/*#[cfg(feature = "websocket")]
 use async_tungstenite::tokio::connect_async;
 #[cfg(all(feature = "use-rustls", feature = "websocket"))]
 use async_tungstenite::tokio::connect_async_with_tls_connector;
-use tokio::net::TcpStream;
+// use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
-use tokio::select;
-use tokio::time::{self, error::Elapsed, Instant, Sleep};
+// use tokio::select;
+// use tokio::time::{self, error::Elapsed, Instant, Sleep};
 #[cfg(feature = "websocket")]
 use ws_stream_tungstenite::WsStream;
 
-use std::io;
 #[cfg(unix)]
 use std::path::Path;
+*/
+
+use std::{fmt, io};
 use std::pin::Pin;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::vec::IntoIter;
+use smol::future::{FutureExt};
+use smol::net::TcpStream;
+use smol::Timer;
+use crate::rr::{Return5, Select5};
+
+/// Errors returned by `Timeout`.
+#[derive(Debug, PartialEq)]
+pub struct Elapsed(());
+impl fmt::Display for Elapsed {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        "deadline has elapsed".fmt(fmt)
+    }
+}
+
+impl std::error::Error for Elapsed {}
+
+impl From<Elapsed> for std::io::Error {
+    fn from(_err: Elapsed) -> std::io::Error {
+        std::io::ErrorKind::TimedOut.into()
+    }
+}
 
 /// Critical errors during eventloop polling
 #[derive(Debug, thiserror::Error)]
@@ -67,7 +90,7 @@ pub struct EventLoop {
     /// Network connection to the broker
     pub(crate) network: Option<Network>,
     /// Keep alive time
-    pub(crate) keepalive_timeout: Option<Pin<Box<Sleep>>>,
+    pub(crate) keepalive_timeout: Option<Pin<Box<Timer>>>,
     /// Handle to read cancellation requests
     pub(crate) cancel_rx: Receiver<()>,
     /// Handle to send cancellation requests (and drops)
@@ -137,7 +160,7 @@ impl EventLoop {
             self.network = Some(network);
 
             if self.keepalive_timeout.is_none() {
-                self.keepalive_timeout = Some(Box::pin(time::sleep(self.options.keep_alive)));
+                self.keepalive_timeout = Some(Box::pin(smol::Timer::after(self.options.keep_alive)));
             }
 
             return Ok(Event::Incoming(connack));
@@ -161,14 +184,71 @@ impl EventLoop {
         let pending = self.pending.len() > 0;
         let collision = self.state.collision.is_some();
 
+
         // Read buffered events from previous polls before calling a new poll
         if let Some(event) = self.state.events.pop_front() {
             return Ok(event);
         }
-
         // this loop is necessary since self.incoming.pop_front() might return None. In that case,
         // instead of returning a None event, we try again.
-        select! {
+        let select5 = Select5{
+            future1: Some(network.readb(&mut self.state)),
+            future2: Some(self.requests_rx.recv()),
+            future3: Some(next_pending(throttle, &mut self.pending)),
+            future4: Some(self.keepalive_timeout.as_mut().unwrap()),
+            future5: Some(self.cancel_rx.recv()),
+            fr1: |_:&Result<(), StateError>| {
+                true
+            },
+            fr2: |_:&Result<Request, async_channel::RecvError>| {
+                !inflight_full && !pending && !collision
+            },
+            fr3: |r3:&Option<_>| {
+                pending && r3.is_some()
+            },
+            fr4: |_:&Instant| {
+                true
+            },
+            fr5: |_:&Result<(), async_channel::RecvError>| {
+                true
+            },
+            start: fastrand::u8(0..5)
+        }.await;
+        match select5 {
+            Return5::R1(o) => {
+                o?;
+                // flush all the acks and return first incoming packet
+                network.flush(&mut self.state.write).await?;
+                Ok(self.state.events.pop_front().unwrap())
+            }
+            Return5::R2(o) => {
+                match o {
+                    Ok(request) => {
+                        self.state.handle_outgoing_packet(request)?;
+                        network.flush(&mut self.state.write).await?;
+                        Ok(self.state.events.pop_front().unwrap())
+                    }
+                    Err(_) => Err(ConnectionError::RequestsDone)
+                }
+            }
+            Return5::R3(request) => {
+                self.state.handle_outgoing_packet(request.unwrap())?;
+                network.flush(&mut self.state.write).await?;
+                Ok(self.state.events.pop_front().unwrap())
+            }
+            Return5::R4(_) => {
+                let timeout = self.keepalive_timeout.as_mut().unwrap();
+                timeout.as_mut().set_after(self.options.keep_alive);
+
+                self.state.handle_outgoing_packet(Request::PingReq)?;
+                network.flush(&mut self.state.write).await?;
+                Ok(self.state.events.pop_front().unwrap())
+            }
+            Return5::R5(_) => {
+                Err(ConnectionError::Cancel)
+            }
+        }
+/*        select! {
             // Pull a bunch of packets from network, reply in bunch and yield the first item
             o = network.readb(&mut self.state) => {
                 o?;
@@ -230,21 +310,152 @@ impl EventLoop {
                 Err(ConnectionError::Cancel)
             }
         }
+*/
+    }
+}
+/*
+enum Return5<T1,T2,T3,T4,T5>{
+    R1(T1),
+    R2(T2),
+    R3(T3),
+    R4(T4),
+    R5(T5)
+}
+pin_project_lite::pin_project!{
+    struct Select5<F1,F2,F3,F4,F5> {
+        #[pin]
+        pub future1: Option<F1>,
+        #[pin]
+        pub future2: Option<F2>,
+        #[pin]
+        pub future3: Option<F3>,
+        #[pin]
+        pub future4: Option<F4>,
+        #[pin]
+        pub future5: Option<F5>,
+        pub fr1: bool,
+        pub fr2: bool,
+        pub fr3: bool,
+        pub fr4: bool,
+        pub fr5: bool,
+        pub start: u8
     }
 }
 
+impl<O3,F1: Future,F2: Future,F3: Future<Output = Option<O3>>,F4: Future,F5: Future> Future for Select5<F1,F2,F3,F4,F5> {
+    type Output = Return5<F1::Output,F2::Output,O3,F4::Output,F5::Output>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut this = self.project();
+        let mut current;
+        let mut is_pending = false;
+        for i in 0..5 {
+            current = (self.start + i) % 5;
+            match current {
+                0 => {
+                    if let Some(p1) = this.future1.as_pin_mut() {
+                        match p1.poll(cx) {
+                            Poll::Ready(r1) => {
+                                if self.fr1 {
+                                    return Poll::Ready(Return5::R1(r1));
+                                }
+                                this.future1.take();
+                            }
+                            Poll::Pending => {
+                            }
+                        }
+                        is_pending = true;
+                    }
+                }
+                1 => {
+                    if let Some(p2) = this.future2.as_pin_mut() {
+                        match p2.poll(cx) {
+                            Poll::Ready(r2) => {
+                                if self.fr2 {
+                                    return Poll::Ready(Return5::R2(r2));
+                                }
+                                this.future2.take();
+                            }
+                            Poll::Pending => {
+                            }
+                        }
+                        is_pending = true;
+                    }
+
+                }
+                2 => {
+                    if let Some(p3) = this.future3.as_pin_mut() {
+                        match p3.poll(cx) {
+                            Poll::Ready(r3) => {
+                                if self.fr3 {
+                                    if let Some(r3) = r3 {
+                                        return Poll::Ready(Return5::R3(r3));
+                                    }
+                                }
+                                this.future3.take();
+                            }
+                            Poll::Pending => {
+                            }
+                        }
+                        is_pending = true;
+                    }
+                }
+                3 => {
+                    if let Some(p4) = this.future4.as_pin_mut() {
+                        match p4.poll(cx) {
+                            Poll::Ready(r4) => {
+                                if self.fr4 {
+                                    return Poll::Ready(Return5::R4(r4));
+                                }
+                                this.future4.take();
+                            }
+                            Poll::Pending => {
+                            }
+                        }
+                        is_pending = true;
+                    }
+                }
+                4 => {
+                    if let Some(p5) = this.future5.as_pin_mut() {
+                        match p5.poll(cx) {
+                            Poll::Ready(r5) => {
+                                if self.fr5 {
+                                    return Poll::Ready(Return5::R5(r5));
+                                }
+                                this.future5.take();
+                            }
+                            Poll::Pending => {
+                            }
+                        }
+                        is_pending = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if is_pending {
+            return Poll::Pending;
+        }
+        panic!("Select5 NO FOUND DEFAULT!")
+    }
+}
+*/
 async fn connect_or_cancel(
     options: &MqttOptions,
     cancel_rx: &Receiver<()>,
 ) -> Result<(Network, Incoming), ConnectionError> {
     // select here prevents cancel request from being blocked until connection request is
     // resolved. Returns with an error if connections fail continuously
-    select! {
+    smol::future::race( connect(options),async {
+        let _ = cancel_rx.recv().await;
+        Err(ConnectionError::Cancel)
+    }).await
+    /*select! {
         o = connect(options) => o,
         _ = cancel_rx.recv() => {
             Err(ConnectionError::Cancel)
         }
-    }
+    }*/
 }
 
 /// This stream internally processes requests from the request stream provided to the eventloop
@@ -288,12 +499,12 @@ async fn network_connect(options: &MqttOptions) -> Result<Network, ConnectionErr
             let socket = tls::tls_connect(options, &tls_config).await?;
             Network::new(socket, options.max_incoming_packet_size)
         }
-        #[cfg(unix)]
+       /* #[cfg(unix)]
         Transport::Unix => {
             let file = options.broker_addr.as_str();
             let socket = UnixStream::connect(Path::new(file)).await?;
             Network::new(socket, options.max_incoming_packet_size)
-        }
+        }*/
         #[cfg(feature = "websocket")]
         Transport::Ws => {
             let request = http::Request::builder()
@@ -342,16 +553,32 @@ async fn mqtt_connect(
         let login = Login::new(username, password);
         connect.login = Some(login);
     }
-
     // mqtt connection with timeout
-    time::timeout(Duration::from_secs(options.connection_timeout()), async {
+    network.connect(connect).or(async {
+        smol::Timer::after(Duration::from_secs(options.connection_timeout())).await;
+        Err(io::ErrorKind::TimedOut.into())
+    }).await?;
+
+/*    time::timeout(Duration::from_secs(options.connection_timeout()), async {
         network.connect(connect).await?;
         Ok::<_, ConnectionError>(())
     })
     .await??;
-
+*/
     // wait for 'timeout' time to validate connack
-    let packet = time::timeout(Duration::from_secs(options.connection_timeout()), async {
+    let packet = async {
+        match network.read().await? {
+            Incoming::ConnAck(connack) if connack.code == ConnectReturnCode::Success => {
+                Ok(Packet::ConnAck(connack))
+            }
+            Incoming::ConnAck(connack) => Err(ConnectionError::ConnectionRefused(connack.code)),
+            packet => Err(ConnectionError::NotConnAck(packet)),
+        }
+    }.or(async {
+        smol::Timer::after(Duration::from_secs(options.connection_timeout())).await;
+        Err(ConnectionError::Timeout(Elapsed(())))
+    }).await?;
+    /*let packet = time::timeout(Duration::from_secs(options.connection_timeout()), async {
         match network.read().await? {
             Incoming::ConnAck(connack) if connack.code == ConnectReturnCode::Success => {
                 Ok(Packet::ConnAck(connack))
@@ -360,7 +587,7 @@ async fn mqtt_connect(
             packet => Err(ConnectionError::NotConnAck(packet)),
         }
     })
-    .await??;
+    .await??;*/
 
     Ok(packet)
 }
@@ -372,6 +599,7 @@ pub(crate) async fn next_pending(
     pending: &mut IntoIter<Request>,
 ) -> Option<Request> {
     // return next packet with a delay
-    time::sleep(delay).await;
+    smol::Timer::after(delay).await;
+    // time::sleep(delay).await;
     pending.next()
 }

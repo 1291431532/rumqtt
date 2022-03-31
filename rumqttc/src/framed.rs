@@ -1,9 +1,13 @@
-use bytes::BytesMut;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-
+use std::future::Future;
+use bytes::{ BufMut, BytesMut };
+// use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use smol::io::{ AsyncRead,AsyncWrite,AsyncWriteExt };
 use crate::mqttbytes::{self, v4::*};
 use crate::{Incoming, MqttState, StateError};
+use std::marker::PhantomPinned;
 use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// Network transforms packets <-> frames efficiently. It takes
 /// advantage of pre-allocation, buffering and vectorization when
@@ -34,7 +38,7 @@ impl Network {
     async fn read_bytes(&mut self, required: usize) -> io::Result<usize> {
         let mut total_read = 0;
         loop {
-            let read = self.socket.read_buf(&mut self.read).await?;
+            let read = read_buf(&mut self.socket,&mut self.read).await?;
             if 0 == read {
                 return if self.read.is_empty() {
                     Err(io::Error::new(
@@ -116,6 +120,70 @@ impl Network {
         Ok(())
     }
 }
+
+pin_project_lite::pin_project! {
+    /// Future returned by [`read_buf`](crate::io::AsyncReadExt::read_buf).
+    #[derive(Debug)]
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
+    pub struct ReadBuf<'a, R, B> {
+        reader: &'a mut R,
+        buf: &'a mut B,
+        #[pin]
+        _pin: PhantomPinned,
+    }
+}
+
+fn read_buf<'a, R, B>(reader: &'a mut R, buf: &'a mut B) -> ReadBuf<'a, R, B>
+    where
+        R: AsyncRead + Unpin,
+        B: BufMut,
+{
+    ReadBuf {
+        reader,
+        buf,
+        _pin: PhantomPinned,
+    }
+}
+
+
+impl<R, B> Future for ReadBuf<'_, R, B>
+    where
+        R: AsyncRead + Unpin,
+        B: BufMut,
+{
+    type Output = io::Result<usize>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
+        use std::mem::MaybeUninit;
+
+        let me = self.project();
+
+        if !me.buf.has_remaining_mut() {
+            return Poll::Ready(Ok(0));
+        }
+
+        let n = {
+            // me.buf.mut
+            let dst = me.buf.chunk_mut();
+            let dst = unsafe { &mut *(dst as *mut _ as *mut [MaybeUninit<u8>]) };
+            unsafe {
+                dst.as_mut_ptr().write_bytes(0, dst.len());
+                let buf = &mut *(dst as *mut [std::mem::MaybeUninit<u8>] as *mut [u8]);
+                smol::ready!(Pin::new(me.reader).poll_read(cx, buf)?)
+            }
+
+        };
+
+        // Safety: This is guaranteed to be the number of initialized (and read)
+        // bytes due to the invariants provided by `ReadBuf::filled`.
+        unsafe {
+            me.buf.advance_mut(n);
+        }
+
+        Poll::Ready(Ok(n))
+    }
+}
+
 
 pub trait N: AsyncRead + AsyncWrite + Send + Unpin {}
 impl<T> N for T where T: AsyncRead + AsyncWrite + Send + Unpin {}

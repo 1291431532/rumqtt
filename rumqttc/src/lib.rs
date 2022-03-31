@@ -98,6 +98,7 @@
 
 #[macro_use]
 extern crate log;
+extern crate core;
 
 use std::fmt::{self, Debug, Formatter};
 #[cfg(feature = "use-rustls")]
@@ -111,9 +112,10 @@ pub mod mqttbytes;
 mod state;
 #[cfg(feature = "use-rustls")]
 mod tls;
+mod rr;
 
 pub use async_channel::{SendError, Sender, TrySendError};
-pub use client::{AsyncClient, Client, ClientError, Connection};
+pub use client::{AsyncClient, ClientError};
 pub use eventloop::{ConnectionError, Event, EventLoop};
 pub use mqttbytes::v4::*;
 pub use mqttbytes::*;
@@ -198,7 +200,7 @@ impl From<Unsubscribe> for Request {
 #[derive(Clone)]
 pub enum Transport {
     Tcp,
-    #[cfg(feature = "use-rustls")]
+    /*#[cfg(feature = "use-rustls")]
     Tls(TlsConfiguration),
     #[cfg(unix)]
     Unix,
@@ -207,7 +209,7 @@ pub enum Transport {
     Ws,
     #[cfg(all(feature = "use-rustls", feature = "websocket"))]
     #[cfg_attr(docsrs, doc(cfg(all(feature = "use-rustls", feature = "websocket"))))]
-    Wss(TlsConfiguration),
+    Wss(TlsConfiguration),*/
 }
 
 impl Default for Transport {
@@ -243,10 +245,10 @@ impl Transport {
         Self::Tls(tls_config)
     }
 
-    #[cfg(unix)]
+/*    #[cfg(unix)]
     pub fn unix() -> Self {
         Self::Unix
-    }
+    }*/
 
     /// Use websockets as transport
     #[cfg(feature = "websocket")]

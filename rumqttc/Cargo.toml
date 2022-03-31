@@ -14,17 +14,24 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["use-rustls"]
-websocket = ["async-tungstenite", "ws_stream_tungstenite"]
-use-rustls = ["tokio-rustls", "rustls-pemfile"]
+default = []
+#websocket = ["async-tungstenite", "ws_stream_tungstenite"]
+#use-rustls = ["tokio-rustls", "rustls-pemfile"]
 
 [dependencies]
-tokio = { version = "1.0", features = ["rt", "macros", "io-util", "net", "time"] }
+smol = "1.2.5"
+fastrand = "1.7.0"
+#futures-util = "0.3.21"
+pin-project-lite = "0.2.8"
+#futures = "0.3.21"
+#futures-lite="1.12.0"
+#futures-macro = "0.3.21"
+#tokio = { version = "1.0", features = ["rt", "macros", "io-util", "net", "time"] }
 bytes = "1.0"
-tokio-rustls = { version = "0.23.2", optional = true }
-rustls-pemfile = { version = "0.3.0", optional = true }
-async-tungstenite = { version = "0.16.1", default-features = false, features = ["tokio-rustls-native-certs"], optional = true }
-ws_stream_tungstenite = { version = "0.7.0", default-features = false, features = ["tokio_io"], optional = true }
+#tokio-rustls = { version = "0.23.2", optional = true }
+#rustls-pemfile = { version = "0.3.0", optional = true }
+#async-tungstenite = { version = "0.16.1", default-features = false, features = ["tokio-rustls-native-certs"], optional = true }
+#ws_stream_tungstenite = { version = "0.7.0", default-features = false, features = ["tokio_io"], optional = true }
 pollster = "0.2"
 async-channel = "1.5"
 log = "0.4"
@@ -39,7 +46,7 @@ crossbeam-channel = "0.5"
 serde = {version = "1", features = ["derive"]}
 envy = "0.4"
 jsonwebtoken = "7"
-tokio = { version = "1.0", features = ["full", "macros"] }
+#tokio = { version = "1.0", features = ["full", "macros"] }
 matches = "0.1.8"
 rustls = "0.20.2"
 rustls-native-certs = "0.6.1"
