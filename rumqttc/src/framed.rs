@@ -161,21 +161,11 @@ impl<R, B> Future for ReadBuf<'_, R, B>
         if !me.buf.has_remaining_mut() {
             return Poll::Ready(Ok(0));
         }
-
         let n = {
-            // me.buf.mut
-            let dst = me.buf.chunk_mut();
-            let dst = unsafe { &mut *(dst as *mut _ as *mut [MaybeUninit<u8>]) };
-            unsafe {
-                dst.as_mut_ptr().write_bytes(0, dst.len());
-                let buf = &mut *(dst as *mut [std::mem::MaybeUninit<u8>] as *mut [u8]);
-                smol::ready!(Pin::new(me.reader).poll_read(cx, buf)?)
-            }
-
+            let buf = unsafe { &mut *(me.buf.chunk_mut() as *mut _ as *mut [MaybeUninit<u8>] as *mut [u8]) };
+            // dst.as_mut_ptr().write_bytes(0, dst.len());
+            smol::ready!(Pin::new(me.reader).poll_read(cx, buf)?)
         };
-
-        // Safety: This is guaranteed to be the number of initialized (and read)
-        // bytes due to the invariants provided by `ReadBuf::filled`.
         unsafe {
             me.buf.advance_mut(n);
         }
