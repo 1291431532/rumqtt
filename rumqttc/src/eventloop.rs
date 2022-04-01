@@ -1,11 +1,11 @@
 use std::{fmt, io};
+use std::net::ToSocketAddrs;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter;
 
 use async_channel::{bounded, Receiver, Sender};
 use smol::future::FutureExt;
-use smol::net::TcpStream;
 use smol::Timer;
 
 use crate::{Incoming, MqttOptions, MqttState, Outgoing, Packet, Request, StateError, Transport};
@@ -499,45 +499,9 @@ async fn network_connect(options: &MqttOptions) -> Result<Network, ConnectionErr
         Transport::Tcp => {
             let addr = options.broker_addr.as_str();
             let port = options.port;
-            let socket = TcpStream::connect((addr, port)).await?;
+            // let socket = TcpStream::connect((addr, port)).await?;
+            let socket = smol::Async::<std::net::TcpStream>::connect((addr, port).to_socket_addrs().unwrap().next().unwrap()).await?;
             Network::new(socket, options.max_incoming_packet_size)
-        }
-        #[cfg(feature = "use-rustls")]
-        Transport::Tls(tls_config) => {
-            let socket = tls::tls_connect(options, &tls_config).await?;
-            Network::new(socket, options.max_incoming_packet_size)
-        }
-        /* #[cfg(unix)]
-         Transport::Unix => {
-             let file = options.broker_addr.as_str();
-             let socket = UnixStream::connect(Path::new(file)).await?;
-             Network::new(socket, options.max_incoming_packet_size)
-         }*/
-        #[cfg(feature = "websocket")]
-        Transport::Ws => {
-            let request = http::Request::builder()
-                .method(http::Method::GET)
-                .uri(options.broker_addr.as_str())
-                .header("Sec-WebSocket-Protocol", "mqttv3.1")
-                .body(())?;
-
-            let (socket, _) = connect_async(request).await?;
-
-            Network::new(WsStream::new(socket), options.max_incoming_packet_size)
-        }
-        #[cfg(all(feature = "use-rustls", feature = "websocket"))]
-        Transport::Wss(tls_config) => {
-            let request = http::Request::builder()
-                .method(http::Method::GET)
-                .uri(options.broker_addr.as_str())
-                .header("Sec-WebSocket-Protocol", "mqttv3.1")
-                .body(())?;
-
-            let connector = tls::tls_connector(&tls_config).await?;
-
-            let (socket, _) = connect_async_with_tls_connector(request, Some(connector)).await?;
-
-            Network::new(WsStream::new(socket), options.max_incoming_packet_size)
         }
     };
 

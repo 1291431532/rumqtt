@@ -199,17 +199,7 @@ impl From<Unsubscribe> for Request {
 
 #[derive(Clone)]
 pub enum Transport {
-    Tcp,
-    /*#[cfg(feature = "use-rustls")]
-    Tls(TlsConfiguration),
-    #[cfg(unix)]
-    Unix,
-    #[cfg(feature = "websocket")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "websocket")))]
-    Ws,
-    #[cfg(all(feature = "use-rustls", feature = "websocket"))]
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "use-rustls", feature = "websocket"))))]
-    Wss(TlsConfiguration),*/
+    Tcp
 }
 
 impl Default for Transport {
