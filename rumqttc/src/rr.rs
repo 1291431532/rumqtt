@@ -40,8 +40,6 @@ impl<FR1, FR2, FR3, FR4, FR5, F1: Future, F2: Future, F3: Future, F4: Future, F5
         let mut is_pending = false;
         for i in 0..5 {
             current = (this.start + i) % 5;
-            // println!("start: {} current: {}",this.start,current);
-            // println!("f1: {} f2: {},f3: {},f4: {},f5: {}",this.future1.is_some(),this.future2.is_some(),this.future3.is_some(),this.future4.is_some(),this.future5.is_some());
             unsafe {
                 match current {
                     0 => {

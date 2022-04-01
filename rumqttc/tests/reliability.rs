@@ -1,12 +1,11 @@
-use std::process::exit;
-use std::thread::sleep;
-use matches::assert_matches;
 use std::time::{Duration, Instant};
-use smol::{Executor, Task};
-mod broker;
+
+use matches::assert_matches;
 
 use broker::*;
 use rumqttc::*;
+
+mod broker;
 
 async fn start_requests(count: u8, qos: QoS, delay: u64, requests_tx: Sender<Request>) {
     for i in 1..=count {
@@ -15,11 +14,9 @@ async fn start_requests(count: u8, qos: QoS, delay: u64, requests_tx: Sender<Req
 
         let publish = Publish::new(topic, qos, payload);
         let request = Request::Publish(publish);
-        println!("SEND {}",i);
         let _ = requests_tx.send(request).await;
         // smol::sleep(Duration::from_secs(delay)).await;
         smol::Timer::after(Duration::from_secs(delay)).await;
-        println!("SEND LOOP {}",i);
     }
 }
 
@@ -120,7 +117,6 @@ fn idle_connection_triggers_pings_on_time() {
         }
 
         assert_eq!(count, 3);
-
     });
 }
 
@@ -276,7 +272,7 @@ fn requests_are_blocked_after_max_inflight_queue_size() {
 }
 
 #[test]
-fn requests_are_recovered_after_inflight_queue_size_falls_below_max() -> Result<(),String>{
+fn requests_are_recovered_after_inflight_queue_size_falls_below_max() -> Result<(), String> {
     // std::env::set_var("SMOL_THREADS","2");
     smol::block_on(async {
         let mut options = MqttOptions::new("dummy", "127.0.0.1", 1888);
@@ -296,7 +292,6 @@ fn requests_are_recovered_after_inflight_queue_size_falls_below_max() -> Result<
         }).detach();
 
         let mut broker = Broker::new(1888, 0).await;
-        println!("one");
         // packet 1, 2, and 3
         assert!(broker.read_publish().await.is_some());
         assert!(broker.read_publish().await.is_some());
@@ -311,33 +306,13 @@ fn requests_are_recovered_after_inflight_queue_size_falls_below_max() -> Result<
         assert!(broker.read_publish().await.is_none());
 
         broker.ack(2).await;
-        let r7 = broker.read_publish().await;
-        dbg!(&r7);
-
-        assert!(r7.is_some());
-        // smol::Timer::after(Duration::from_secs(2)).await;
-        // dbg!("ack e2");
-/*
         // ack packet 2 and client would produce packet 5
-        println!("one7");
         let r7 = broker.read_publish().await;
-        dbg!(&r7);
         assert!(r7.is_some());
-        println!("one8");
         assert!(broker.read_publish().await.is_none());
-        println!("one9");*/
-
     });
 
     Ok(())
-}
-
-#[test]
-fn out() {
-    "one\nPolled = Ok(Incoming(ConnAck(ConnAck { session_present: false, code: Success })))\nstart: 3 current: 3\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 3 current: 4\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 3 current: 0\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 3 current: 1\nf1: true f2: true,f3: true,f4: true,f5: true\nend select\nr2 Ok(Publish(Topic = hello/world, Qos = AtLeastOnce, Retain = false, Pkid = 0, Payload Size = 4))\n[rumqttc\\src\\eventloop.rs:260] \"end select result: {}\" = \"end select result: {}\"\n[rumqttc\\src\\eventloop.rs:260] &rr = Outgoing(\n    Publish(\n        1,\n    ),\n)\nPolled = Ok(Outgoing(Publish(1)))\nstart: 2 current: 2\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 2 current: 3\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 4\nf1: true f2: true,f3: false,f4: true,f5: true\none2\nstart: 2 current: 0\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 1\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 2\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 3\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 4\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 0\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 1\nf1: true f2: true,f3: false,f4: true,f5: true\nend select\nr2 Ok(Publish(Topic = hello/world, Qos = AtLeastOnce, Retain = false, Pkid = 0, Payload Size = 4))\n[rumqttc\\src\\eventloop.rs:260] \"end select result: {}\" = \"end select result: {}\"\n[rumqttc\\src\\eventloop.rs:260] &rr = Outgoing(\n    Publish(\n        2,\n    ),\n)\nPolled = Ok(Outgoing(Publish(2)))\nstart: 3 current: 3\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 3 current: 4\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 3 current: 0\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 3 current: 1\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 3 current: 2\nf1: true f2: true,f3: true,f4: true,f5: true\none3\nstart: 3 current: 3\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 3 current: 4\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 3 current: 0\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 3 current: 1\nf1: true f2: true,f3: false,f4: true,f5: true\nend select\nr2 Ok(Publish(Topic = hello/world, Qos = AtLeastOnce, Retain = false, Pkid = 0, Payload Size = 4))\n[rumqttc\\src\\eventloop.rs:260] \"end select result: {}\" = \"end select result: {}\"\n[rumqttc\\src\\eventloop.rs:260] &rr = Outgoing(\n    Publish(\n        3,\n    ),\n)\nPolled = Ok(Outgoing(Publish(3)))\nstart: 2 current: 2\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 2 current: 3\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 4\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 0\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 1\nf1: true f2: true,f3: false,f4: true,f5: true\none4\nstart: 2 current: 2\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 3\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 4\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 0\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 1\nf1: true f2: true,f3: false,f4: true,f5: true\n[rumqttc\\tests\\broker.rs:86] e = Timeout(\n    Elapsed,\n)\none5\nstart: 2 current: 2\nf1: true f2: false,f3: false,f4: true,f5: true\nstart: 2 current: 3\nf1: true f2: false,f3: false,f4: true,f5: true\nstart: 2 current: 4\nf1: true f2: false,f3: false,f4: true,f5: true\nstart: 2 current: 0\nf1: true f2: false,f3: false,f4: true,f5: true\nend select\nr1 Ok(())\n[rumqttc\\src\\eventloop.rs:260] \"end select result: {}\" = \"end select result: {}\"\n[rumqttc\\src\\eventloop.rs:260] &rr = Incoming(\n    PubAck(\n        PubAck {\n            pkid: 1,\n        },\n    ),\n)\nPolled = Ok(Incoming(PubAck(PubAck { pkid: 1 })))\nstart: 3 current: 3\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 3 current: 4\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 3 current: 0\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 3 current: 1\nf1: true f2: true,f3: true,f4: true,f5: true\nend select\nr2 Ok(Publish(Topic = hello/world, Qos = AtLeastOnce, Retain = false, Pkid = 0, Payload Size = 4))\n[rumqttc\\src\\eventloop.rs:260] \"end select result: {}\" = \"end select result: {}\"\n[rumqttc\\src\\eventloop.rs:260] &rr = Outgoing(\n    Publish(\n        1,\n    ),\n)\nPolled = Ok(Outgoing(Publish(1)))\nstart: 2 current: 2\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 2 current: 3\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 4\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 0\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 1\nf1: true f2: true,f3: false,f4: true,f5: true\none6\n[rumqttc\\tests\\broker.rs:86] e = Timeout(\n    Elapsed,\n)\n[rumqttc\\tests\\reliability.rs:315] \"ack s\" = \"ack s\"\n[rumqttc\\tests\\reliability.rs:317] \"ack e\" = \"ack e\"\nstart: 2 current: 2\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 3\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 4\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 2 current: 0\nf1: true f2: true,f3: false,f4: true,f5: true\nend select\nr1 Ok(())\n[rumqttc\\src\\eventloop.rs:260] \"end select result: {}\" = \"end select result: {}\"\n[rumqttc\\src\\eventloop.rs:260] &rr = Incoming(\n    PubAck(\n        PubAck {\n            pkid: 2,\n        },\n    ),\n)\nPolled = Ok(Incoming(PubAck(PubAck { pkid: 2 })))\nstart: 0 current: 0\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 0 current: 1\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 0 current: 2\nf1: true f2: true,f3: true,f4: true,f5: true\nstart: 0 current: 3\nf1: true f2: true,f3: false,f4: true,f5: true\nstart: 0 current: 4\nf1: true f2: true,f3: false,f4: true,f5: true\n[rumqttc\\tests\\broker.rs:86] e = Timeout(\n    Elapsed,\n)\n[rumqttc\\tests\\reliability.rs:319] &r7 = None\nthread 'requests_are_recovered_after_inflight_queue_size_falls_below_max' panicked at 'assertion failed: r7.is_some()', rumqttc\\tests\\reliability.rs:322:9\nstack backtrace:\n   0: std::panicking::begin_panic_handler\n             at /rustc/ee915c34e2f33a07856a9e39be7e35e648bfbd5d\\/library\\std\\src\\panicking.rs:584\n   1: core::panicking::panic_fmt\n             at /rustc/ee915c34e2f33a07856a9e39be7e35e648bfbd5d\\/library\\core\\src\\panicking.rs:143\n   2: core::panicking::panic\n             at /rustc/ee915c34e2f33a07856a9e39be7e35e648bfbd5d\\/library\\core\\src\\panicking.rs:48\n   3: reliability::requests_are_recovered_after_inflight_queue_size_falls_below_max::async_block$0\n             at .\\tests\\reliability.rs:322\n   4: core::future::from_generator::impl$1::poll<enum$<reliability::requests_are_recovered_after_inflight_queue_size_falls_below_max::async_block_env$0> >\n             at /rustc/ee915c34e2f33a07856a9e39be7e35e648bfbd5d\\library\\core\\src\\future\\mod.rs:91\n   5: async_io::driver::block_on<tuple$<>,core::future::from_generator::GenFuture<enum$<reliability::requests_are_recovered_after_inflight_queue_size_falls_below_max::async_block_env$0> > >\n             at C:\\Users\\EDZ\\.cargo\\registry\\src\\rsproxy.cn-8f6827c7555bfaf8\\async-io-1.6.0\\src\\driver.rs:142\n   6: reliability::requests_are_recovered_after_inflight_queue_size_falls_below_max\n             at .\\tests\\reliability.rs:279\n   7: reliability::requests_are_recovered_after_inflight_queue_size_falls_below_max::closure$0\n             at .\\tests\\reliability.rs:277\n   8: core::ops::function::FnOnce::call_once<reliability::requests_are_recovered_after_inflight_queue_size_falls_below_max::closure_env$0,tuple$<> >\n             at /rustc/ee915c34e2f33a07856a9e39be7e35e648bfbd5d\\library\\core\\src\\ops\\function.rs:227\n   9: core::ops::function::FnOnce::call_once\n             at /rustc/ee915c34e2f33a07856a9e39be7e35e648bfbd5d\\library\\core\\src\\ops\\function.rs:227\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\nstart: 0 current: 0\nf1: true f2: true,f3: false,f4: true,f5: true\n"
-        .split("\n").for_each(|line| {
-        println!("{}",line);
-    })
 }
 
 #[test]
@@ -468,7 +443,7 @@ fn next_poll_after_connect_failure_reconnects() {
             let _broker = Broker::new(3000, 1).await;
             let _broker = Broker::new(3000, 0).await;
             smol::Timer::after(Duration::from_secs(15)).await;
-        });
+        }).detach();
 
         smol::Timer::after(Duration::from_secs(1)).await;
         let mut eventloop = EventLoop::new(options, 5);
@@ -485,7 +460,6 @@ fn next_poll_after_connect_failure_reconnects() {
                                                }))) => (),
             v => panic!("Expected ConnAck Success. Found = {:?}", v),
         }
-
     });
 }
 
@@ -501,12 +475,12 @@ fn reconnection_resumes_from_the_previous_state() {
         smol::spawn(async move {
             start_requests(10, QoS::AtLeastOnce, 1, requests_tx).await;
             smol::Timer::after(Duration::from_secs(10)).await;
-        });
+        }).detach();
 
         // start the eventloop
         smol::spawn(async move {
             run(&mut eventloop, true).await.unwrap();
-        });
+        }).detach();
 
         // broker connection 1
         let mut broker = Broker::new(3001, 0).await;
@@ -529,7 +503,6 @@ fn reconnection_resumes_from_the_previous_state() {
             assert_eq!(i, packet.payload[0]);
             broker.ack(packet.pkid).await;
         }
-
     });
 }
 
@@ -546,12 +519,12 @@ fn reconnection_resends_unacked_packets_from_the_previous_connection_first() {
         smol::spawn(async move {
             start_requests(10, QoS::AtLeastOnce, 1, requests_tx).await;
             smol::Timer::after(Duration::from_secs(10)).await;
-        });
+        }).detach();
 
         // start the client eventloop
         smol::spawn(async move {
             run(&mut eventloop, true).await.unwrap();
-        });
+        }).detach();
 
         // broker connection 1. receive but don't ack
         let mut broker = Broker::new(3002, 0).await;

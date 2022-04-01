@@ -1,13 +1,9 @@
-use std::future::Future;
-use bytes::{ BufMut, BytesMut };
+use bytes::{ BytesMut };
 // use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use smol::io::{ AsyncRead,AsyncWrite,AsyncWriteExt };
 use crate::mqttbytes::{self, v4::*};
 use crate::{Incoming, MqttState, StateError};
-use std::marker::PhantomPinned;
 use std::io;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
 /// Network transforms packets <-> frames efficiently. It takes
 /// advantage of pre-allocation, buffering and vectorization when
