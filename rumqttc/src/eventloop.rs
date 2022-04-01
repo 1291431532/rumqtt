@@ -32,7 +32,7 @@ use crate::rr::{Return5, Select5};
 
 /// Errors returned by `Timeout`.
 #[derive(Debug, PartialEq)]
-pub struct Elapsed(());
+pub struct Elapsed;
 impl fmt::Display for Elapsed {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         "deadline has elapsed".fmt(fmt)
@@ -214,14 +214,16 @@ impl EventLoop {
             },
             start: fastrand::u8(0..5)
         }.await;
-        match select5 {
+        let result= match select5 {
             Return5::R1(o) => {
+                println!("r1 {:?}",&o);
                 o?;
                 // flush all the acks and return first incoming packet
                 network.flush(&mut self.state.write).await?;
                 Ok(self.state.events.pop_front().unwrap())
             }
             Return5::R2(o) => {
+                println!("r2 {:?}",&o);
                 match o {
                     Ok(request) => {
                         self.state.handle_outgoing_packet(request)?;
@@ -232,22 +234,35 @@ impl EventLoop {
                 }
             }
             Return5::R3(request) => {
+                println!("r3 {:?}",&request);
                 self.state.handle_outgoing_packet(request.unwrap())?;
                 network.flush(&mut self.state.write).await?;
                 Ok(self.state.events.pop_front().unwrap())
             }
             Return5::R4(_) => {
+                println!("r4 ");
                 let timeout = self.keepalive_timeout.as_mut().unwrap();
-                timeout.as_mut().set_after(self.options.keep_alive);
+                timeout.as_mut().set(Timer::after(self.options.keep_alive));
+                // timeout.as_mut().set_after(self.options.keep_alive);
 
                 self.state.handle_outgoing_packet(Request::PingReq)?;
                 network.flush(&mut self.state.write).await?;
                 Ok(self.state.events.pop_front().unwrap())
             }
             Return5::R5(_) => {
+                println!("r5 ");
                 Err(ConnectionError::Cancel)
             }
+        };
+        match &result {
+            Ok(rr) => {
+                println!("select! 结束 OK: {:?}",&rr);
+            }
+            Err(re) => {
+                println!("select! 结束 Err: {:?}",&re);
+            }
         }
+        return result;
 /*        select! {
             // Pull a bunch of packets from network, reply in bunch and yield the first item
             o = network.readb(&mut self.state) => {
@@ -576,7 +591,7 @@ async fn mqtt_connect(
         }
     }.or(async {
         smol::Timer::after(Duration::from_secs(options.connection_timeout())).await;
-        Err(ConnectionError::Timeout(Elapsed(())))
+        Err(ConnectionError::Timeout(Elapsed))
     }).await?;
     /*let packet = time::timeout(Duration::from_secs(options.connection_timeout()), async {
         match network.read().await? {

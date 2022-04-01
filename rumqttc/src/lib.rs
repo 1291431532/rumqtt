@@ -113,10 +113,10 @@ mod state;
 #[cfg(feature = "use-rustls")]
 mod tls;
 mod rr;
-
+pub use rr::{read_buf};
 pub use async_channel::{SendError, Sender, TrySendError};
 pub use client::{AsyncClient, ClientError};
-pub use eventloop::{ConnectionError, Event, EventLoop};
+pub use eventloop::{ConnectionError, Event, EventLoop,Elapsed};
 pub use mqttbytes::v4::*;
 pub use mqttbytes::*;
 pub use state::{MqttState, StateError};

@@ -38,7 +38,7 @@ impl Network {
     async fn read_bytes(&mut self, required: usize) -> io::Result<usize> {
         let mut total_read = 0;
         loop {
-            let read = read_buf(&mut self.socket,&mut self.read).await?;
+            let read = crate::read_buf(&mut self.socket, &mut self.read).await?;
             if 0 == read {
                 return if self.read.is_empty() {
                     Err(io::Error::new(
@@ -121,58 +121,7 @@ impl Network {
     }
 }
 
-pin_project_lite::pin_project! {
-    /// Future returned by [`read_buf`](crate::io::AsyncReadExt::read_buf).
-    #[derive(Debug)]
-    #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct ReadBuf<'a, R, B> {
-        reader: &'a mut R,
-        buf: &'a mut B,
-        #[pin]
-        _pin: PhantomPinned,
-    }
-}
 
-fn read_buf<'a, R, B>(reader: &'a mut R, buf: &'a mut B) -> ReadBuf<'a, R, B>
-    where
-        R: AsyncRead + Unpin,
-        B: BufMut,
-{
-    ReadBuf {
-        reader,
-        buf,
-        _pin: PhantomPinned,
-    }
-}
-
-
-impl<R, B> Future for ReadBuf<'_, R, B>
-    where
-        R: AsyncRead + Unpin,
-        B: BufMut,
-{
-    type Output = io::Result<usize>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
-        use std::mem::MaybeUninit;
-
-        let me = self.project();
-
-        if !me.buf.has_remaining_mut() {
-            return Poll::Ready(Ok(0));
-        }
-        let n = {
-            let buf = unsafe { &mut *(me.buf.chunk_mut() as *mut _ as *mut [MaybeUninit<u8>] as *mut [u8]) };
-            // dst.as_mut_ptr().write_bytes(0, dst.len());
-            smol::ready!(Pin::new(me.reader).poll_read(cx, buf)?)
-        };
-        unsafe {
-            me.buf.advance_mut(n);
-        }
-
-        Poll::Ready(Ok(n))
-    }
-}
 
 
 pub trait N: AsyncRead + AsyncWrite + Send + Unpin {}

@@ -3,14 +3,14 @@ use rumqttc::mqttbytes::*;
 use std::collections::VecDeque;
 use std::io;
 use std::time::Duration;
-use tokio::net::TcpListener;
-use tokio::select;
-use tokio::{task, time};
 
-use async_channel::{bounded, Receiver, Sender};
+use async_channel::{bounded, Receiver, RecvError, Sender};
 use bytes::BytesMut;
-use rumqttc::{Event, Incoming, Outgoing, Packet};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use smol::future::FutureExt;
+use rumqttc::{Elapsed, Event, Incoming, Outgoing, Packet, read_buf};
+use smol::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use smol::net::TcpListener;
+use rumqttc::ConnectionError::Timeout;
 
 pub struct Broker {
     pub(crate) framed: Network,
@@ -67,15 +67,25 @@ impl Broker {
             let packet = if !self.incoming.is_empty() {
                 self.incoming.pop_front().unwrap()
             } else {
-                let packet = time::timeout(Duration::from_secs(2), async {
+                let packet = async {
+                    self.framed.readb(&mut self.incoming).await.unwrap();
+                    Ok(self.incoming.pop_front().unwrap())
+                }.or(async {
+                    smol::Timer::after(Duration::from_secs(2)).await;
+                    Err(Timeout(Elapsed))
+                }).await;
+/*                let packet = time::timeout(Duration::from_secs(2), async {
                     self.framed.readb(&mut self.incoming).await.unwrap();
                     self.incoming.pop_front().unwrap()
                 })
                 .await;
-
+*/
                 match packet {
                     Ok(packet) => packet,
-                    Err(_e) => return None,
+                    Err(e) => {
+                        dbg!(e);
+                        return None;
+                    },
                 }
             };
 
@@ -92,12 +102,21 @@ impl Broker {
 
     /// Reads next packet from the stream
     pub async fn read_packet(&mut self) -> Packet {
-        time::timeout(Duration::from_secs(30), async {
+
+        async {
+            let p = self.framed.readb(&mut self.incoming).await;
+            // println!("Broker read = {:?}", p);
+            Ok(p.unwrap())
+        }.or(async {
+            smol::Timer::after(Duration::from_secs(30)).await;
+            Err(Timeout(Elapsed))
+        }).await
+        /*time::timeout(Duration::from_secs(30), async {
             let p = self.framed.readb(&mut self.incoming).await;
             // println!("Broker read = {:?}", p);
             p.unwrap()
         })
-        .await
+        .await*/
         .unwrap();
 
         self.incoming.pop_front().unwrap()
@@ -125,7 +144,7 @@ impl Broker {
     pub async fn spawn_publishes(&mut self, count: u8, qos: QoS, delay: u64) {
         let tx = self.outgoing_tx.clone();
 
-        task::spawn(async move {
+        smol::spawn(async move {
             for i in 1..=count {
                 let topic = "hello/world".to_owned();
                 let payload = vec![1, 2, 3, i];
@@ -137,14 +156,34 @@ impl Broker {
 
                 let packet = Packet::Publish(publish);
                 tx.send(packet).await.unwrap();
-                time::sleep(Duration::from_secs(delay)).await;
+                // time::sleep(Duration::from_secs(delay)).await;
+                smol::Timer::after(Duration::from_secs(delay)).await;
             }
-        });
+        }).detach();
     }
 
     /// Selects between outgoing and incoming packets
     pub async fn tick(&mut self) -> Event {
-        select! {
+        let f1 = self.outgoing_rx.recv();
+        let f2 = self.framed.readb(&mut self.incoming);
+        let r = async {
+            Ok(f1.await)
+        }.race(async {
+            Err(f2.await)
+        }).await;
+        match r {
+            Ok(request) => {
+                let request = request.unwrap();
+                let outgoing = self.framed.write(request).await.unwrap();
+                Event::Outgoing(outgoing)
+            }
+            Err(packet) => {
+                packet.unwrap();
+                let incoming = self.incoming.pop_front().unwrap();
+                Event::Incoming(incoming)
+            }
+        }
+        /*select! {
             request = self.outgoing_rx.recv() => {
                 let request = request.unwrap();
                 let outgoing = self.framed.write(request).await.unwrap();
@@ -155,7 +194,7 @@ impl Broker {
                 let incoming = self.incoming.pop_front().unwrap();
                 Event::Incoming(incoming)
             }
-        }
+        }*/
     }
 }
 
@@ -191,7 +230,8 @@ impl Network {
     async fn read_bytes(&mut self, required: usize) -> io::Result<usize> {
         let mut total_read = 0;
         loop {
-            let read = self.socket.read_buf(&mut self.read).await?;
+            let read = read_buf(&mut self.socket,&mut self.read).await?;
+            // let read = self.socket.read_buf(&mut self.read).await?;
             if 0 == read {
                 return if self.read.is_empty() {
                     Err(io::Error::new(

@@ -1,6 +1,10 @@
 use std::future::Future;
+use std::marker::PhantomPinned;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use bytes::BufMut;
+use smol::io;
+use smol::prelude::*;
 
 // use pin_project_lite::pin_project;
 
@@ -36,6 +40,8 @@ impl<FR1, FR2, FR3, FR4, FR5, F1: Future, F2: Future, F3: Future, F4: Future, F5
         let mut is_pending = false;
         for i in 0..5 {
             current = (this.start + i) % 5;
+            // println!("start: {} current: {}",this.start,current);
+            // println!("f1: {} f2: {},f3: {},f4: {},f5: {}",this.future1.is_some(),this.future2.is_some(),this.future3.is_some(),this.future4.is_some(),this.future5.is_some());
             unsafe {
                 match current {
                     0 => {
@@ -45,7 +51,7 @@ impl<FR1, FR2, FR3, FR4, FR5, F1: Future, F2: Future, F3: Future, F4: Future, F5
                                     if (this.fr1)(&r1) {
                                         return Poll::Ready(Return5::R1(r1));
                                     }
-                                    // this.future1.take();
+                                    this.future1.take();
                                 }
                                 Poll::Pending => {}
                             }
@@ -116,5 +122,59 @@ impl<FR1, FR2, FR3, FR4, FR5, F1: Future, F2: Future, F3: Future, F4: Future, F5
             return Poll::Pending;
         }
         panic!("Select5 NO FOUND DEFAULT!")
+    }
+}
+
+
+pin_project_lite::pin_project! {
+    /// Future returned by [`read_buf`](crate::io::AsyncReadExt::read_buf).
+    #[derive(Debug)]
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
+    pub struct ReadBuf<'a, R, B> {
+        reader: &'a mut R,
+        buf: &'a mut B,
+        #[pin]
+        _pin: PhantomPinned,
+    }
+}
+
+pub fn read_buf<'a, R, B>(reader: &'a mut R, buf: &'a mut B) -> ReadBuf<'a, R, B>
+    where
+        R: AsyncRead + Unpin,
+        B: BufMut,
+{
+    ReadBuf {
+        reader,
+        buf,
+        _pin: PhantomPinned,
+    }
+}
+
+
+impl<R, B> Future for ReadBuf<'_, R, B>
+    where
+        R: AsyncRead + Unpin,
+        B: BufMut,
+{
+    type Output = io::Result<usize>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
+        use std::mem::MaybeUninit;
+
+        let me = self.project();
+
+        if !me.buf.has_remaining_mut() {
+            return Poll::Ready(Ok(0));
+        }
+        let n = {
+            let buf = unsafe { &mut *(me.buf.chunk_mut() as *mut _ as *mut [MaybeUninit<u8>] as *mut [u8]) };
+            // dst.as_mut_ptr().write_bytes(0, dst.len());
+            smol::ready!(Pin::new(me.reader).poll_read(cx, buf)?)
+        };
+        unsafe {
+            me.buf.advance_mut(n);
+        }
+
+        Poll::Ready(Ok(n))
     }
 }
